@@ -1,17 +1,20 @@
 # Can Large Reasoning Models Self-Train?
 
-This is the official PyTorch implementation of our paper "Can Large Reasoning Models Self-Train?" by [Sheikh Shafayat*](https://sheikhshafayat.github.io/), [Fahim Tajwar*](https://tajwarfahim.github.io/), [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/), [Jeff Schneider](https://www.cs.cmu.edu/~schneide/), and [Andrea Zanette](https://azanette.com/). Please see the [project website](https://self-rewarding-llm-training.github.io/) for more information about this work. For any questions/concerns related to the codebase, please reach out to [Fahim Tajwar](mailto:tajwarfahim932@gmail.com) and/or [Sheikh Shafayat](mailto:sheikhshafayat2@gmail.com).
+This is the official PyTorch implementation of our paper ["Can Large Reasoning Models Self-Train?"](https://arxiv.org/abs/2505.21444) by [Sheikh Shafayat*](https://sheikhshafayat.github.io/), [Fahim Tajwar*](https://tajwarfahim.github.io/), [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/), [Jeff Schneider](https://www.cs.cmu.edu/~schneide/), and [Andrea Zanette](https://azanette.com/). Please see the [project website](https://self-rewarding-llm-training.github.io/) for more information about this work. For any questions/concerns related to the codebase, please reach out to [Fahim Tajwar](mailto:tajwarfahim932@gmail.com) and/or [Sheikh Shafayat](mailto:sheikhshafayat2@gmail.com).
 
 ## Citation
 
 If you use this repo in your research, please consider citing our paper:
 
 ```
-@misc{shafayat2025CanLargeReasoningModelsSelfTrain,
+@misc{shafayat2025largereasoningmodelsselftrain,
       title={Can Large Reasoning Models Self-Train?}, 
       author={Sheikh Shafayat and Fahim Tajwar and Ruslan Salakhutdinov and Jeff Schneider and Andrea Zanette},
       year={2025},
-      url={https://self-rewarding-llm-training.github.io/}, 
+      eprint={2505.21444},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2505.21444}, 
 }
 ```
 
