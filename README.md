@@ -134,3 +134,5 @@ Please make appropriate changes to the scripts depending on your particular set 
 ## Acknowledgements
 
 This codebase is built on top of [verl](https://github.com/volcengine/verl), and we use the core functionalities in their codebase heavily. We thank the authors of verl for providing us with an extremely easy-to-work-with codebase!
+
+Contemporary work such as [MM-UPT](https://github.com/waltonfuture/MM-UPT) have tried a similar idea for training multi-modal LLMs. We thank the authors for pointing it out, and would encourage interested users to look at their [codebase](https://github.com/waltonfuture/MM-UPT) and [paper](https://arxiv.org/abs/2505.22453).
