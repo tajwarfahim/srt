@@ -155,7 +155,7 @@ class NaiveRewardManager:
         llm_response_matrix = np.array(llm_response_list).reshape(N, n) # original llm response. We don't use them for now
 
         # the actual plotting code: 
-        thresholds = np.arange(0, 1.01, 0.05)
+        thresholds = np.arange(0, 1.01, 0.01)
 
         accuracy_list = []
         num_of_prompts = []
@@ -169,13 +169,13 @@ class NaiveRewardManager:
                 ith_pred = [x for x in ith_pred_ if x != ""]
                 ith_pred = [x for x in ith_pred if x is not None]
                 if len(ith_pred) == 0:
+                    mode = None
                     continue
+
                 counter = Counter(ith_pred)
                 mode, count = counter.most_common(1)[0]
-                try:
-                    mode = "\\boxed{"+mode+"}"
-                except:
-                    pass
+                mode = "\\boxed{"+mode+"}"
+            
                 p = count / len(ith_pred)
                 gt = ground_truths_matrix[i][0]
                 data_source = data_source_matrix[i][0]
@@ -223,9 +223,11 @@ class NaiveRewardManager:
         """
 
 
-        print(len(prompt_list))
+        # print(f"##### prompt list size: {len(prompt_list)}")
         N = len(set(prompt_list))
+        
         n = len(prompt_list) // N
+        # print(f"##### N is {N}, n is {n}")
 
         assert n * N == len(prompt_list)
 
@@ -243,14 +245,14 @@ class NaiveRewardManager:
             data_source = data_source_matrix[i][0]
             
             if len(ith_pred) == 0:
-                mode = None
+                mode = ""
             else:
                 counter = Counter(ith_pred)
                 mode, _ = counter.most_common(1)[0]
                 try:
                     mode = "\\boxed{"+mode+"}"
                 except:
-                    mode = None
+                    mode = ""
             # _list.append(self.compute_score(solution_str=mode, ground_truth=gt, data_source=data_source))
             mode_accuracy[data_source].append(self.compute_score(solution_str=mode, ground_truth=gt, data_source=data_source))
 
@@ -378,6 +380,7 @@ class NaiveRewardManager:
             raw_responses['prompt_list'] = prompt_list
             raw_responses['data_source_list'] = data_source_list
             raw_responses['extracted_answer_list'] = extracted_answer_list
+            raw_responses['llm_response_list'] = llm_response_list
 
             return {
                 "reward_tensor": reward_tensor,

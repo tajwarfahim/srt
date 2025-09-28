@@ -6,7 +6,9 @@ from verl.utils.reward_score import (
     _extract_verifiable_part_of_solution,
 )
 import torch
+import json
 from collections import defaultdict, Counter
+import random
 
 
 GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED = "LABEL_BY_SELF_CONSISTENCY"
@@ -18,12 +20,14 @@ class SelfLearningRewardManager:
     def __init__(self, 
         tokenizer, 
         num_examine, 
-        self_consistency_threshold,
+        self_consistency_threshold=0.0,
         soft_reward=False,
         remove_kl_loss_from_unlabeled_examples=True,
         compute_score=None, 
         reward_fn_key='data_source',
         oversampling_keep_fraction=1.0,
+        dynamic_filtering_threshold=0.0,
+        num_generations_per_prompt=32,
     ) -> None:
         self.tokenizer = tokenizer
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
@@ -35,6 +39,8 @@ class SelfLearningRewardManager:
         self.soft_reward = soft_reward
         self.remove_kl_loss_from_unlabeled_examples = remove_kl_loss_from_unlabeled_examples
         self.oversampling_keep_fraction = oversampling_keep_fraction
+        self.dynamic_filtering_threshold = dynamic_filtering_threshold
+        self.num_generations_per_prompt = num_generations_per_prompt
 
         assert (
             isinstance(self.oversampling_keep_fraction, float)
@@ -42,10 +48,23 @@ class SelfLearningRewardManager:
             and self.oversampling_keep_fraction <= 1.0
         )
 
+        assert (
+            isinstance(self.dynamic_filtering_threshold, float)
+            and self.dynamic_filtering_threshold >= 0.0
+            and self.dynamic_filtering_threshold <= 1.0
+        )
+
+        if self.dynamic_filtering_threshold > 0.0:
+            assert self.oversampling_keep_fraction == 1.0, "Dynamic filtering and oversampling cannot be enabled together"
+
+        if self.oversampling_keep_fraction < 1.0:
+            assert self.dynamic_filtering_threshold == 0.0, "Dynamic filtering and oversampling cannot be enabled together"
+
         # Print stuff
         print("\nSelf consistency threshold: ", self.self_consistency_threshold)
         print("Using soft reward: ", self.soft_reward)
         print("Remove KL loss from unlabelled examples: ", self.remove_kl_loss_from_unlabeled_examples)
+        print("Dynamic filtering threshold: ", self.dynamic_filtering_threshold)
         print(f"Keeping {self.oversampling_keep_fraction} fraction of prompts. \n")
 
     def get_prompt_and_response_and_ground_truth(
@@ -150,6 +169,11 @@ class SelfLearningRewardManager:
         prompt_to_ground_truth_map = {}
         prompt_to_hidden_solution_map = {}
 
+        num_properly_extracted = 0
+        num_of_correct_rollouts = 0
+
+        log_fraction_metrics = random.random() < (1.0 / 3.0)
+
         for i in range(len(data)):
             data_item = data[i]
             (
@@ -166,11 +190,32 @@ class SelfLearningRewardManager:
                 solution_str=response_str,
             )
 
-            if extracted_answer is not None:
+            if extracted_answer is not None and extracted_answer != "":
                 prompt_to_generation_map[prompt_str].append(extracted_answer)
+                num_properly_extracted += 1
+
+                # [NOTE] Running verifier for every rollout is expensive so we only do one third of times
+                
+                extracted_answer_ = f"\\boxed{{{extracted_answer}}}"
+                if log_fraction_metrics:
+                    if self.compute_score(
+                        data_source=data_item.non_tensor_batch[self.reward_fn_key],
+                        solution_str=extracted_answer_,
+                        ground_truth=hidden_solution,
+                    ) == 1.0:
+                        num_of_correct_rollouts += 1
+                    # just calculate the number of rollouts that are correct then divide by two different numbers;
+            
+
+
 
             prompt_to_ground_truth_map[prompt_str] = ground_truth
             prompt_to_hidden_solution_map[prompt_str] = hidden_solution
+        
+        fraction_correctly_parsed = num_properly_extracted/len(data)
+        if log_fraction_metrics:
+            fraction_correct_among_parsed = num_of_correct_rollouts/num_properly_extracted if num_properly_extracted > 0 else 0.0
+            fraction_correct_among_all_rollouts = num_of_correct_rollouts/len(data) if len(data) > 0 else 0.0   
 
         # Next, for prompts for which the gold solution needs to be calculated by self-consistency
         # we generate them, otherwise obtain it from gold label
@@ -182,6 +227,7 @@ class SelfLearningRewardManager:
 
         prompt_to_answer_reward_map = {}
 
+
         # NOTE: this is only used when self.soft_reward is False
         prompt_to_majority_answer_fraction = {}
 
@@ -190,7 +236,17 @@ class SelfLearningRewardManager:
 
             # Gold reward available for this datapoint
             # So we do not need to calculate self labeling reward
-            if prompt_to_ground_truth_map[prompt_str] != GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED:
+
+            try:
+                parsed_data = json.loads(prompt_to_ground_truth_map[prompt_str])
+                answer = parsed_data.get("answer", prompt_to_ground_truth_map[prompt_str])
+
+                source = parsed_data['source_dataset']
+            except:
+                answer = prompt_to_ground_truth_map[prompt_str]
+                source = data_item.non_tensor_batch[self.reward_fn_key]
+            
+            if answer != GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED:
                 prompt_to_answer_reward_map[prompt_str] = {
                     prompt_to_ground_truth_map[prompt_str]: 1.0
                 }
@@ -211,16 +267,17 @@ class SelfLearningRewardManager:
 
                         for index in range(len(sorted_by_frequency)):
                             curr_answer, answer_frequency = sorted_by_frequency[index]
-                            answer_reward = float(answer_frequency) / len(all_solutions)
+                            answer_reward = float(answer_frequency) / self.num_generations_per_prompt
                             answer_to_reward_map[curr_answer] = answer_reward
 
                         prompt_to_answer_reward_map[prompt_str] = answer_to_reward_map
+                        prompt_to_majority_answer_fraction[prompt_str] = 1.0
 
                     # calculate self consistency level
                     else:
                         majority_answer, majority_frequency = counts.most_common(1)[0]
                         majority_answer_appears_this_fraction_of_the_time = (
-                            float(majority_frequency) / len(all_solutions)
+                            float(majority_frequency) / self.num_generations_per_prompt
                         )
 
                         if (
@@ -233,10 +290,16 @@ class SelfLearningRewardManager:
                             # would be used to potentially throw out data
                             prompt_to_majority_answer_fraction[prompt_str] = majority_answer_appears_this_fraction_of_the_time
 
-                            num_prompts_labeled_via_self_consistency += 1
+                            # dynamic filtering logic
+                            if majority_answer_appears_this_fraction_of_the_time >= self.dynamic_filtering_threshold:
+                                num_prompts_labeled_via_self_consistency += 1
 
                             hidden_answer = prompt_to_hidden_solution_map[prompt_str]
-                            if majority_answer == hidden_answer:
+
+                            majority_ans_ = f"\\boxed{{{majority_answer}}}"
+                            score = self.compute_score(solution_str=majority_ans_, ground_truth=hidden_answer, data_source=source)
+
+                            if score == 1.0:
                                 num_prompts_correctly_labeled += 1
 
                         # None of the generations crossed self-consistency threshold
@@ -254,16 +317,27 @@ class SelfLearningRewardManager:
             fraction_labeled = num_prompts_labeled_via_self_consistency / num_all_prompts
         else:
             fraction_labeled = 0.0
-
+        # print(f"Fraction of prompts labeled via self consistency: {fraction_labeled:.4f} ({num_prompts_labeled_via_self_consistency}/{num_all_prompts})")
         if num_prompts_labeled_via_self_consistency != 0:
             fraction_correctly_labeled = num_prompts_correctly_labeled / num_prompts_labeled_via_self_consistency
         else:
             fraction_correctly_labeled = 0.0
 
-        self_labeling_metrics = {
-            "self_labeling_metrics/fraction_labeled_via_self_consistency": fraction_labeled,
-            "self_labeling_metrics/fraction_correctly_labeled": fraction_correctly_labeled,
-        }
+        if log_fraction_metrics:
+            self_labeling_metrics = {
+                "self_labeling_metrics/fraction_labeled_via_self_consistency": fraction_labeled,
+                "self_labeling_metrics/fraction_correctly_labeled": fraction_correctly_labeled,
+                "self_labeling_metrics/fraction_correctly_parsed": fraction_correctly_parsed,
+                # The followings are resource consuming
+                "self_labeling_metrics/fraction_correct_among_parsed": fraction_correct_among_parsed,
+                "self_labeling_metrics/fraction_correct_among_all_rollouts": fraction_correct_among_all_rollouts
+            }
+        else:self_labeling_metrics = {
+                "self_labeling_metrics/fraction_labeled_via_self_consistency": fraction_labeled,
+                "self_labeling_metrics/fraction_correctly_labeled": fraction_correctly_labeled,
+                "self_labeling_metrics/fraction_correctly_parsed": fraction_correctly_parsed,
+            } 
+
         
         # Calculate prompts that we will throw out
         prompts_to_keep = None
@@ -276,7 +350,13 @@ class SelfLearningRewardManager:
             prompt_majority_fraction_pairs = []
             for _prompt in prompt_to_ground_truth_map:
                 # Prompts with gold labels, no need to throw them out
-                if prompt_to_ground_truth_map[_prompt] != GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED:
+                try:
+                    parsed_data = json.loads(prompt_to_ground_truth_map[prompt_str])
+                    answer = parsed_data.get("answer", prompt_to_ground_truth_map[prompt_str])
+                except:
+                    answer = prompt_to_ground_truth_map[prompt_str]
+
+                if answer != GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED:
                     prompts_to_keep.append(_prompt)
 
                 else:
@@ -309,6 +389,7 @@ class SelfLearningRewardManager:
             self_labeling_metrics, 
             prompt_to_ground_truth_map, 
             prompt_to_answer_reward_map,
+            prompt_to_majority_answer_fraction,
             prompts_to_keep,
         )
 
@@ -362,7 +443,8 @@ class SelfLearningRewardManager:
         return mode_accuracy
 
     def __call__(self, data: DataProto, return_dict=False, log_threshold_plot=False):
-        """We will expand this function gradually based on the available datasets.
+        """
+        We will expand this function gradually based on the available datasets.
         Threshold plotting is not implemented here.
         """
         
@@ -385,10 +467,12 @@ class SelfLearningRewardManager:
             self_labeling_metrics, 
             prompt_to_ground_truth_map,
             prompt_to_answer_reward_map,
+            prompt_to_majority_answer_fraction,
             prompts_to_keep,
         ) = self.calculate_ground_truth_answers(
             data=data,
         )
+
 
         num_prompts_self_labeled = 0.0
         num_correct_among_self_labeled_prompts = 0.0
@@ -431,6 +515,7 @@ class SelfLearningRewardManager:
 
             extra_info = data_item.non_tensor_batch.get('extra_info', None)
 
+
             num_train_generations_correct += self.compute_score(
                 data_source=data_source,
                 solution_str=response_str,
@@ -439,11 +524,16 @@ class SelfLearningRewardManager:
             )
 
             # Prompts that need to be self-labeled
-            if ground_truth == GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED:
+            if data_source in ["reasoning_gym"]: # reasoning gym needs to be dealt a bit differently
+                _gt = json.loads(ground_truth)["answer"]
+            else:
+                _gt = ground_truth
+            if _gt == GROUND_TRUTH_FOR_PROMPTS_THAT_NEED_TO_BE_SELF_LABELLED:
                 answer_reward_map = prompt_to_answer_reward_map[prompt_str] 
 
                 # Prompts that remains unlabeled
                 # We remove rewards from it
+
                 if answer_reward_map is None:
                     score = 0.0
                     
@@ -452,12 +542,20 @@ class SelfLearningRewardManager:
 
                 else:
                     score = 0.0
-
+                    
                     for curr_answer in answer_reward_map:
+                        if data_source in ["reasoning_gym"]:
+                            # we do this trick to format the current answer properly. ground_truth has the right format already so we just use it
+                            _curr = json.loads(ground_truth) 
+                            _curr["answer"] = curr_answer
+                            _curr_answer = json.dumps(_curr)
+                        else:
+                            _curr_answer = curr_answer
+                
                         partial_score = self.compute_score(
                             data_source=data_source,
                             solution_str=response_str,
-                            ground_truth=curr_answer,
+                            ground_truth=_curr_answer,
                             extra_info=extra_info,
                         )
 
@@ -475,7 +573,6 @@ class SelfLearningRewardManager:
                             ground_truth=solution_hidden_during_training,
                             extra_info=extra_info,
                         )
-
 
             # Prompts that have ground_truth labels available
             else:
@@ -503,7 +600,7 @@ class SelfLearningRewardManager:
                 already_print_data_sources[data_source] += 1
                 print("[prompt]", prompt_str)
                 print("[response]", response_str)
-                print("[ground_truth]", ground_truth)
+                print("[ground_truth]", _gt)
                 if isinstance(score, dict):
                     for key, value in score.items():
                         print(f"[{key}]", value)

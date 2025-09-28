@@ -14,12 +14,16 @@
 # from . import gsm8k, math, prime_math, prime_code
 
 from typing import Optional
+import json
+
 
 
 def _default_compute_score(data_source, solution_str, ground_truth, extra_info=None):
     if data_source == 'openai/gsm8k':
-        from . import gsm8k
-        res = gsm8k.compute_score(solution_str, ground_truth)
+        # from . import gsm8k
+        # res = gsm8k.compute_score(solution_str, ground_truth)
+        from . import math_verify
+        res = math_verify.compute_score(solution_str, ground_truth)
 
     elif data_source in ['lighteval/MATH', 'DigitalLearningGmbH/MATH-lighteval']:
         # from . import math
@@ -58,18 +62,8 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
         from . import countdown
         res = countdown.compute_score(solution_str, ground_truth)
 
-    # For AIME, we use the same parser/solution extractor as MATH
-    elif "AIME" in data_source:
-        from . import math_verify
-        res = math_verify.compute_score(solution_str, ground_truth)
-
-    # For DAPO, we use the same parser/solution extractor as MATH
-    elif data_source == "math_dapo":
-        from . import math_verify
-        res = math_verify.compute_score(solution_str, ground_truth)
-
     # for the six evaluation sources, MATH parser works just as well:
-    elif data_source in ["math500", "aime24", "aime25", "minerva_math", "olympiadbench", "amc23", "aime"]: 
+    elif data_source in ["math500", "aime24", "aime25", "AIME", "math_dapo", "minerva_math", "olympiadbench", "amc23", "aime"]: 
         from . import math_verify
         res = math_verify.compute_score(solution_str, ground_truth)
 
@@ -78,8 +72,16 @@ def _default_compute_score(data_source, solution_str, ground_truth, extra_info=N
         from . import math_verify
         res = math_verify.compute_score(solution_str, ground_truth)
     
+    elif data_source in ['reasoning_gym'] or data_source.startswith("knight") or data_source.startswith("bitwise") or data_source.startswith("family"):
+        from . import reasoning_gym
+        res = reasoning_gym.compute_score(model_output=solution_str, ground_truth=ground_truth)
+
+    elif data_source == "Idavidrein/gpqa": 
+        from . import gpqa
+        res = gpqa.compute_score(solution_str, ground_truth)
+
     else:
-        raise NotImplementedError(f"Reward function is not implemented for {data_source=}")
+        raise NotImplementedError(f"Reward function is not implemented for {data_source}")
 
     if isinstance(res, dict):
         return res
@@ -116,9 +118,17 @@ def _extract_verifiable_part_of_solution(
         result = math_verify.extract_solution(solution_str=solution_str)
 
     # for the six evaluation sources, MATH parser works just as well:
-    elif data_source in ["math500", "aime24", "aime25", "minerva_math", "olympiadbench", "amc23"]: 
+    elif data_source in ["math500", "aime24", "aime25", "minerva_math", "olympiadbench", "amc23"]:
         from . import math_verify
         result = math_verify.extract_solution(solution_str=solution_str)
+    
+    elif data_source in ["reasoning_gym"] or data_source.startswith("knight") or data_source.startswith("bitwise") or data_source.startswith("family"): 
+        from . import reasoning_gym 
+        result = reasoning_gym.extract_solution(solution_str=solution_str)   
+    
+    elif data_source == "Idavidrein/gpqa":
+        from . import gpqa
+        result = gpqa.extract_solution(solution_str=solution_str)
 
     # For NUMINA-MATH, we also use the MATH parser:
     elif data_source == "numina_math":
