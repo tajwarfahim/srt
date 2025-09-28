@@ -2,6 +2,18 @@
 
 This is the official PyTorch implementation of our paper ["Can Large Reasoning Models Self-Train?"](https://arxiv.org/abs/2505.21444) by [Sheikh Shafayat*](https://sheikhshafayat.github.io/), [Fahim Tajwar*](https://tajwarfahim.github.io/), [Ruslan Salakhutdinov](https://www.cs.cmu.edu/~rsalakhu/), [Jeff Schneider](https://www.cs.cmu.edu/~schneide/), and [Andrea Zanette](https://azanette.com/). Please see the [project website](https://self-rewarding-llm-training.github.io/) for more information about this work. For any questions/concerns related to the codebase, please reach out to [Fahim Tajwar](mailto:tajwarfahim932@gmail.com) and/or [Sheikh Shafayat](mailto:sheikhshafayat2@gmail.com).
 
+---
+## ⚠️ This branch includes the code to reproduce **Reasoning Gym** results.  
+
+🧩 Reasoning Gym Preprocessing:
+
+You can find them under:
+```
+srt/examples/data_preprocess/reasoning_gym.py # prepares the core Reasoning Gym datasets.
+srt/examples/data_preprocess/reasoning_gym_label_noise.py # generates label masked variants of the Reasoning Gym datasets for SRT
+```
+---
+
 ## Citation
 
 If you use this repo in your research, please consider citing our paper:
